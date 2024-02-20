@@ -1,0 +1,20 @@
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+COPY ./svelte-frontend/package.json ./
+COPY ./svelte-frontend/package-lock.json ./
+
+RUN npm install
+
+COPY ./svelte-frontend ./
+
+RUN npm run build
+
+FROM nginx:latest
+
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY ./svelte-frontend/bulk-booking/bulk-booker.html /usr/share/nginx/html
+COPY ./nginx/nginx.conf /etc/nginx/templates/default.conf.template
+
+CMD ["nginx", "-g", "daemon off;"]

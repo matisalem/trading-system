@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+
+  frontend:
+    image: nginx-frontend
+    build: 
+      context: ./html
+    ports:
+      - "80:80"
+    networks: 
+      - frontend
+      - backend
+    depends_on:
+      - backend
+      - websocket
+    environment:
+      API_GROUP: server backend:8000;
+      WS_GROUP: server websocket:8000;
+  
+  backend:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    networks: 
+      - backend
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - TZ=America/New_York
+
+  position-listener:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.aggr
+    depends_on:
+      - redis
+    networks: 
+      - backend
+    environment:
+      - REDIS_HOST=redis
+      - TZ=America/New_York
+      - RECOVERY_MODE=rebuild
+    stop_signal: SIGTERM
+
+  price-listener:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.price
+    depends_on:
+      - redis
+    networks: 
+      - backend
+    environment:
+      - REDIS_HOST=redis
+      - TZ=America/New_York
+      - RECOVERY_MODE=rebuild
+    stop_signal: SIGTERM
+
+  pl-listener:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.pl
+    depends_on:
+      - redis
+    networks: 
+      - backend
+    environment:
+      - REDIS_HOST=redis
+      - TZ=America/New_York
+      - RECOVERY_MODE=rebuild
+    stop_signal: SIGTERM
+  
+  websocket:
+    image: websocket
+    build:
+      context: ./python
+      dockerfile: Dockerfile.ws
+    ports:
+      - "8080:8000"
+    networks:
+      - backend
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+
+networks: 
+  frontend:
+  backend:
+
+volumes:
+  redis_data:

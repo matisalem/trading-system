@@ -1,0 +1,92 @@
+name: Backend Check and Build
+
+on:
+    push:
+        paths:
+            - 'python/**'
+    workflow_dispatch:
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.10"
+            - name: Install dependencies
+              run: |
+                python -m pip install --upgrade pip
+                pip install -r requirements_dev.txt
+              working-directory: ./python
+            - name: Run ruff
+              id: lint
+              run: ruff check .
+              continue-on-error: true
+              working-directory: ./python
+            - name: Run tests
+              id: test
+              run: pytest tests/
+              working-directory: ./python
+            - name: Comment on Commit
+              uses: octokit/request-action@v2.x
+              with:
+                route: POST /repos/${{ github.repository }}/check-runs
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                INPUT_HEAD_SHA: ${{ github.sha }}
+                INPUT_NAME: Python API Checks
+                INPUT_STATUS: completed
+                INPUT_CONCLUSION: failure
+                INPUT_OUTPUT: |
+                  title: Python API Checks Run
+                  summary: ${{ join(steps.test.outputs.*, '\n') }}
+              if: github.event_name == 'push' && steps.test.outcome == 'failure'
+    build:
+        runs-on: ubuntu-latest
+        needs: test
+        strategy:
+          matrix:
+            include:
+              - component: api
+                file: api
+                name: API
+              - component: service
+                file: aggr
+                name: Aggregation Service
+              - component: websocket
+                file: ws
+                name: WebSocket
+              - component: price-listener
+                file: price
+                name: Price Listener
+              - component: pl-listener
+                file: pl
+                name: P&L Listener
+        name: Build and Push ${{ matrix.name }}
+        steps:
+            - uses: actions/checkout@v3
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v2
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+            - name: Extract metadata for ${{ matrix.name }} Image
+              id: meta
+              uses: docker/metadata-action@v4
+              with:
+                images: ghcr.io/trade-booking-system/${{ matrix.component }}
+            - name: Build and Push ${{ matrix.name }} Image
+              uses: docker/build-push-action@v4
+              with:
+                push: true
+                context: ./python
+                file: ./python/Dockerfile.${{ matrix.file }}
+                labels: ${{ steps.meta.outputs.labels }}
+                tags: ${{ steps.meta.outputs.tags }}

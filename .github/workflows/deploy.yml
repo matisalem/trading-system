@@ -1,0 +1,30 @@
+name: Deplow to ECS
+
+permissions:
+    id-token: write
+
+env:
+    role: arn:aws:iam::142002257801:role/GithubActions
+    region: "us-east-1"
+    cluster: arn:aws:ecs:us-east-1:142002257801:cluster/yisroel-test
+
+on:
+    workflow_run:
+        workflows: [Backend Check and Build, Build and Push Frontend]
+        types: completed
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        steps:
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v2
+              with:
+                  role-to-assume: ${{ env.role }}
+                  aws-region: ${{ env.region }}
+            - name: Redeploy Services
+              run: |
+                aws ecs list-services --cluster ${{ env.cluster }} --output text \
+                --query 'serviceArns[*]' | tr -d '\n' | xargs -n1 -d'\t' \
+                aws ecs update-service --cluster ${{ env.cluster }} --force-new-deployment --service
